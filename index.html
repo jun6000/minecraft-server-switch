@@ -122,9 +122,46 @@
             showLoginView();
         }
 
-// 🔄 Polling: Read server state and visually set the toggle
+// ⚡ Execution: Fired when a user flips the switch
+async function handleToggleChange() {
+    if (isTransitioning) return; // Block double-clicks
+
+    const token = localStorage.getItem('mc_access_key');
+    const toggle = document.getElementById('stateToggle');
+    const track = document.getElementById('toggleTrack');
+    const knob = document.getElementById('toggleKnob');
+    const status = document.getElementById('statusMsg');
+    
+    const targetAction = toggle.checked ? "start" : "stop";
+    isTransitioning = true;
+
+    // 🎨 OPTIMISTIC UI STYLE DESIGN: Match the visuals immediately to user intent
+    if (targetAction === "start") {
+        if (status) status.innerText = "Systems are booting up... Please wait.";
+        if (track) track.className = "w-24 h-12 bg-amber-500 rounded-full animate-pulse transition-all duration-300 relative flex items-center p-1 cursor-pointer";
+        if (knob) knob.className = "w-10 h-10 bg-white rounded-full shadow-md transition-all duration-300 transform translate-x-12";
+    } else {
+        if (status) status.innerText = "Winding down server threads... Please wait.";
+        if (track) track.className = "w-24 h-12 bg-slate-600 rounded-full animate-pulse transition-all duration-300 relative flex items-center p-1 cursor-pointer";
+        if (knob) knob.className = "w-10 h-10 bg-slate-400 rounded-full shadow-inner transition-all duration-300 transform translate-x-0";
+    }
+
+    try {
+        await fetch(`${BASE_URL}/trigger/${token}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' },
+            body: JSON.stringify({ action: targetAction })
+        });
+    } catch (err) {
+        console.error("Transmission failed:", err);
+    } finally {
+        isTransitioning = false; // Yield block lock back to status updater loop
+    }
+}
+
+// 🔄 Polling System Loop Tracker
 async function checkRealtimeStatus() {
-    if (isTransitioning) return; // Yield completely to user click events mid-flight
+    if (isTransitioning) return; // Yield context layout strictly to manual clicks mid-flight
 
     const token = localStorage.getItem('mc_access_key');
     const toggle = document.getElementById('stateToggle');
@@ -143,8 +180,7 @@ async function checkRealtimeStatus() {
             status.innerText = data.message;
         }
 
-        // 🔓 Keep toggle.disabled = false globally across all states so it stays responsive!
-        toggle.disabled = false; 
+        toggle.disabled = false; // Keep fully interactive always
 
         if (data.status === "online") {
             toggle.checked = true;
@@ -156,6 +192,11 @@ async function checkRealtimeStatus() {
             if (track) track.className = "w-24 h-12 bg-amber-500 rounded-full animate-pulse transition-all duration-300 relative flex items-center p-1 cursor-pointer";
             if (knob) knob.className = "w-10 h-10 bg-white rounded-full shadow-md transition-all duration-300 transform translate-x-12";
             
+        } else if (data.status === "stopping") {
+            toggle.checked = false;
+            if (track) track.className = "w-24 h-12 bg-slate-600 rounded-full animate-pulse transition-all duration-300 relative flex items-center p-1 cursor-pointer";
+            if (knob) knob.className = "w-10 h-10 bg-slate-400 rounded-full shadow-inner transition-all duration-300 transform translate-x-0";
+            
         } else {
             toggle.checked = false;
             if (track) track.className = "w-24 h-12 bg-slate-700 rounded-full transition-all duration-300 relative flex items-center p-1 cursor-pointer";
@@ -163,51 +204,12 @@ async function checkRealtimeStatus() {
         }
         dismissLoader();
     } catch (err) {
-        // Fallback broken handler style assignment
         if (status) status.innerText = "Host connection offline.";
         toggle.checked = false;
-        toggle.disabled = true; // Safe to disable only when the actual API link is totally broken
+        toggle.disabled = true; 
         if (track) track.className = "w-24 h-12 bg-slate-800 opacity-40 border border-slate-700 rounded-full relative flex items-center p-1 cursor-not-allowed transition-all duration-300";
         if (knob) knob.className = "w-10 h-10 bg-slate-500 rounded-full shadow-inner transition-all duration-300 transform translate-x-0";
         dismissLoader();
-    }
-}
-
-// ⚡ Execution: Fired when a user physically flips the switch
-async function handleToggleChange() {
-    if (isTransitioning) return; // Prevent overlapping API requests
-
-    const token = localStorage.getItem('mc_access_key');
-    const toggle = document.getElementById('stateToggle');
-    const track = document.getElementById('toggleTrack');
-    const knob = document.getElementById('toggleKnob');
-    const status = document.getElementById('statusMsg');
-    
-    const targetAction = toggle.checked ? "start" : "stop";
-    
-    isTransitioning = true;
-
-    // 🎨 OPTIMISTIC UI: Snap the visuals instantly so the user feels immediate response
-    if (targetAction === "start") {
-        status.innerText = "Systems are booting up... Please wait.";
-        if (track) track.className = "w-24 h-12 bg-amber-500 rounded-full animate-pulse transition-all duration-300 relative flex items-center p-1 cursor-pointer";
-        if (knob) knob.className = "w-10 h-10 bg-white rounded-full shadow-md transition-all duration-300 transform translate-x-12";
-    } else {
-        status.innerText = "Winding down server threads... Please wait.";
-        if (track) track.className = "w-24 h-12 bg-slate-600 rounded-full animate-pulse transition-all duration-300 relative flex items-center p-1 cursor-pointer";
-        if (knob) knob.className = "w-10 h-10 bg-slate-400 rounded-full shadow-inner transition-all duration-300 transform translate-x-0";
-    }
-
-    try {
-        await fetch(`${BASE_URL}/trigger/${token}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' },
-            body: JSON.stringify({ action: targetAction })
-        });
-    } catch (err) {
-        console.error("Transmission failed:", err);
-    } finally {
-        isTransitioning = false; 
     }
 }
     </script>
