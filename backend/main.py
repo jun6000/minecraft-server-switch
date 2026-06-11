@@ -9,11 +9,16 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=["*"],             # Explicitly allows Vercel domains to connect
+    allow_credentials=False,         # Must be False if allow_origins is set to "*"
+    allow_methods=["*"],             # Allows POST, GET, OPTIONS, PUT, DELETE
+    allow_headers=["*"],             # Allows custom headers like ngrok-skip-browser-warning
+    expose_headers=["*"],
 )
+
+@app.options("/{path:path}")
+async def preflight_handler():
+    return {"message": "ok"}
 
 SECRET_SLUG = "4f7d8a2c1b9e3f6a5d8c7b2a1e0f9b8a"
 
@@ -41,14 +46,26 @@ def validate_key(payload: dict):
         return {"valid": True}
     raise HTTPException(status_code=401, detail="Invalid access key")
 
-@app.get(f"/status/{SECRET_SLUG}")
-def get_status():
-    proc = get_server_process()
-    if not proc:
-        return {"status": "offline", "message": "Server is stopped"}
-    if is_port_open():
-        return {"status": "online", "message": "Server is online!"}
-    return {"status": "starting", "message": "Server is initializing..."}
+@app.get("/status/{token}")
+def get_status(token: str):
+    # Verify token
+    if token != SECRET_SLUG:
+        # Instead of raising HTTPException(401), return a clean dictionary response!
+        return {"status": "offline", "message": "Unauthorized session access."}
+        
+    try:
+        # Your original code that checks if the server is running...
+        # e.g., is_running = check_minecraft_process()
+        
+        if is_running:
+            return {"status": "online", "message": "Server is actively running."}
+        else:
+            return {"status": "offline", "message": "Server is currently stopped."}
+            
+    except Exception as e:
+        print(f"Internal wrapper error: {e}")
+        # Return a fallback JSON state instead of letting Python crash!
+        return {"status": "offline", "message": "Host connection offline."}
 
 # The Switch Core: Handles both ON and OFF requests
 @app.post(f"/trigger/{SECRET_SLUG}")

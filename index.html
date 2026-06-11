@@ -102,9 +102,15 @@
             const status = document.getElementById('statusMsg');
 
             try {
-                const response = await fetch(`${BASE_URL}/status/${token}`);
-                const data = await response.json();
-                status.innerText = data.message;
+		// Add the options object containing our custom skip header to this GET request
+		const response = await fetch(`${BASE_URL}/status/${token}`, {
+			method: 'GET',
+			headers: {
+			    'ngrok-skip-browser-warning': 'true'
+			}
+		});
+		const data = await response.json();
+		status.innerText = data.message;
 
                 if (data.status === "online") {
                     toggle.checked = true;
@@ -139,11 +145,14 @@
             status.innerText = targetAction === "start" ? "Sending start signal..." : "Sending stop signal...";
 
             try {
-                await fetch(`${BASE_URL}/trigger/${token}`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ action: targetAction })
-                });
+		await fetch(`${BASE_URL}/trigger/${token}`, {
+			method: 'POST',
+			headers: { 
+			    'Content-Type': 'application/json',
+			    'ngrok-skip-browser-warning': 'true' // 👈 Add this here too!
+			},
+			body: JSON.stringify({ action: targetAction })
+		    });
             } catch (err) {
                 console.error("Action transmission failed.");
             } finally {
