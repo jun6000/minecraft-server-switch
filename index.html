@@ -67,11 +67,14 @@
             const key = document.getElementById('keyInput').value.trim();
             if (!key) return;
             try {
-                const response = await fetch(`${BASE_URL}/validate-key`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ key: key })
-                });
+		const response = await fetch(`${BASE_URL}/validate-key/${key}`, {
+		    method: 'POST',
+		    headers: { 
+			'Content-Type': 'application/json',
+			'ngrok-skip-browser-warning': 'true'
+		    },
+		    body: JSON.stringify({ key: key })
+		});
                 if (response.ok) {
                     localStorage.setItem('mc_access_key', key);
                     showControlView();

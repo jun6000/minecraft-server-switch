@@ -35,7 +35,7 @@ def is_port_open(port=25565):
         except (socket.timeout, ConnectionRefusedError):
             return False
 
-@app.post("/validate-key")
+@app.post(f"/validate-key/{SECRET_SLUG}")
 def validate_key(payload: dict):
     if payload.get("key") == SECRET_SLUG:
         return {"valid": True}
