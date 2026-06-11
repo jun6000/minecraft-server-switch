@@ -124,13 +124,38 @@ def trigger_switch(payload: dict):
             return {"status": "starting", "message": "Booting engines..."}
             
         elif action == "stop":
-            if not is_running:
-                return {"status": "info", "message": "Systems are already stopped."}
-                
-            script_path = os.path.join(backend_dir, "stop_server.bat")
-            subprocess.Popen([script_path], shell=True)
-            return {"status": "offline", "message": "Shutting down systems..."}
+            terminated_any = False
             
+            for proc in psutil.process_iter(['name', 'cmdline']):
+                try:
+                    name = proc.info['name']
+                    cmdline = proc.info['cmdline']
+                    
+                    if not name:
+                        continue
+                        
+                    name_lower = name.lower()
+                    
+                    # 1. Target the Minecraft Server via its PID
+                    if 'java' in name_lower:
+                        if cmdline and any('server.jar' in arg.lower() or 'nogui' in arg.lower() for arg in cmdline):
+                            # Adding /f forces the stubborn background Java instance to close instantly
+                            subprocess.run(["taskkill", "/pid", str(proc.pid), "/f", "/t"], capture_output=True)
+                            terminated_any = True
+                            
+                    # 2. Target the Playit Connection Tunnel
+                    elif 'playit' in name_lower:
+                        subprocess.run(["taskkill", "/pid", str(proc.pid), "/f"], capture_output=True)
+                        terminated_any = True
+                        
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    continue
+            
+            if terminated_any:
+                return {"status": "offline", "message": "Shutdown sequence initiated."}
+            else:
+                return {"status": "info", "message": "No active processes discovered to close."}
+                
         raise HTTPException(status_code=400, detail="Invalid action")
 
     except Exception as e:

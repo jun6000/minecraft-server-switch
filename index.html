@@ -176,37 +176,55 @@ async function checkRealtimeStatus() {
     }
 }
 
-        // ⚡ Execution: Fired when a user physically flips the switch
-        async function handleToggleChange() {
-            const token = localStorage.getItem('mc_access_key');
-            const toggle = document.getElementById('stateToggle');
-            const status = document.getElementById('statusMsg');
-            
-            const targetAction = toggle.checked ? "start" : "stop";
-            
-            isTransitioning = true; 
-            toggle.disabled = true;
-            status.innerText = targetAction === "start" ? "Sending start signal..." : "Sending stop signal...";
+// ⚡ Execution: Fired when a user physically flips the switch
+async function handleToggleChange() {
+    const token = localStorage.getItem('mc_access_key');
+    const toggle = document.getElementById('stateToggle');
+    const track = document.getElementById('toggleTrack');
+    const knob = document.getElementById('toggleKnob');
+    const status = document.getElementById('statusMsg');
+    
+    if (isTransitioning) return; // Hard guard against event race conditions
 
-            try {
-		await fetch(`${BASE_URL}/trigger/${token}`, {
-			method: 'POST',
-			headers: { 
-			    'Content-Type': 'application/json',
-			    'ngrok-skip-browser-warning': 'true' // 👈 Add this here too!
-			},
-			body: JSON.stringify({ action: targetAction })
-		    });
-            } catch (err) {
-                console.error("Action transmission failed.");
-            } finally {
-                // Release UI control lock back to the status polling thread
-                setTimeout(() => {
-                    isTransitioning = false;
-                    checkRealtimeStatus();
-                }, 1500);
-            }
-        }
+    const targetAction = toggle.checked ? "start" : "stop";
+    
+    // 1. Enter strict visual lock down immediately
+    isTransitioning = true; 
+    toggle.disabled = true;
+
+    // Set immediate, locked transition styles depending on the target action
+    if (targetAction === "start") {
+        status.innerText = "Launching server systems... Please wait.";
+        if (track) track.className = "w-24 h-12 bg-amber-500 rounded-full animate-pulse transition-all duration-300 relative flex items-center p-1 cursor-wait";
+        if (knob) knob.className = "w-10 h-10 bg-white rounded-full shadow-md transition-all duration-300 transform translate-x-12";
+    } else {
+        status.innerText = "Winding down server threads... Please wait.";
+        if (track) track.className = "w-24 h-12 bg-slate-600 rounded-full animate-pulse transition-all duration-300 relative flex items-center p-1 cursor-wait";
+        if (knob) knob.className = "w-10 h-10 bg-slate-400 rounded-full shadow-inner transition-all duration-300 transform translate-x-0";
+    }
+
+    try {
+        await fetch(`${BASE_URL}/trigger/${token}`, {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json',
+                'ngrok-skip-browser-warning': 'true'
+            },
+            body: JSON.stringify({ action: targetAction })
+        });
+    } catch (err) {
+        console.error("Action transmission failed:", err);
+        status.innerText = "Failed to transmit trigger request.";
+    } finally {
+        // 2. Give the host machine 15 seconds (15000ms) to clear/start tasks 
+        // before letting checkRealtimeStatus overwrite the display again!
+        setTimeout(() => {
+            isTransitioning = false;
+            // The next time polling runs naturally, it will read the true updated state!
+            checkRealtimeStatus(); 
+        }, 15000); // 👈 Bumped up from 1500 to 15000
+    }
+}
     </script>
 </body>
 </html>
