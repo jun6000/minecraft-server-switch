@@ -16,13 +16,13 @@ app.add_middleware(
     expose_headers=["*"],
 )
 
-def check_minecraft_process() -> bool:
+def check_minecraft_status() -> str:
     """
-    Scans running system processes. 
-    Returns True ONLY if BOTH the Minecraft server (Java) AND the playit tunnel client are running.
+    Evaluates the system process tree and returns a precise status string.
     """
     java_running = False
     playit_running = False
+    cmd_running = False
     
     for proc in psutil.process_iter(['name', 'cmdline']):
         try:
@@ -31,27 +31,33 @@ def check_minecraft_process() -> bool:
             
             if not name:
                 continue
-                
             name_lower = name.lower()
             
-            # 1. Check for the Minecraft Server (Java instance with server flags)
+            # 1. Detect Java Server Instance
             if 'java' in name_lower:
                 if cmdline and any('server.jar' in arg.lower() or 'nogui' in arg.lower() for arg in cmdline):
                     java_running = True
                     
-            # 2. Check for the Playit Tunnel Client
-            # Usually named 'playit.exe' on Windows, or contains 'playit' in the command line
+            # 2. Detect Playit Tunnel
             elif 'playit' in name_lower:
                 playit_running = True
                 
-            # Quick escape: if we found both, no need to keep searching the process tree
-            if java_running and playit_running:
-                return True
-                
+            # 3. Detect Active Launch Script
+            elif 'cmd' in name_lower:
+                if cmdline and any('start_server.bat' in arg.lower() for arg in cmdline):
+                    cmd_running = True
+                    
         except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
             continue
-            
-    return java_running and playit_running
+
+    # 🧮 Logic Mapping
+    if java_running and playit_running:
+        return "online"
+    elif cmd_running or (java_running != playit_running):
+        # If the batch file is alive, or one process started but not the other, we are transitioning!
+        return "starting"
+    else:
+        return "offline"
 
 @app.options("/{path:path}")
 async def preflight_handler():
@@ -85,24 +91,19 @@ def validate_key(payload: dict):
 
 @app.get("/status/{token}")
 def get_status(token: str):
-    # Verify token
     if token != SECRET_SLUG:
-        # Instead of raising HTTPException(401), return a clean dictionary response!
-        return {"status": "offline", "message": "Unauthorized session access."}
+        raise HTTPException(status_code=401, detail="Unauthorized")
         
-    try:
-        # Your original code that checks if the server is running...
-        is_running = check_minecraft_process()
-        
-        if is_running:
-            return {"status": "online", "message": "Server is actively running."}
-        else:
-            return {"status": "offline", "message": "Server is currently stopped."}
-            
-    except Exception as e:
-        print(f"Internal wrapper error: {e}")
-        # Return a fallback JSON state instead of letting Python crash!
-        return {"status": "offline", "message": "Host connection offline."}
+    current_state = check_minecraft_status()
+    
+    # Map messages beautifully based on true state
+    messages = {
+        "online": "Server is up and running!",
+        "starting": "Systems are booting up... Please wait.",
+        "offline": "Server is currently offline."
+    }
+    
+    return {"status": current_state, "message": messages[current_state]}
 
 # The Switch Core: Handles both ON and OFF requests
 @app.post(f"/trigger/{SECRET_SLUG}")
@@ -136,10 +137,9 @@ def trigger_switch(payload: dict):
                         
                     name_lower = name.lower()
                     
-                    # 1. Target the Minecraft Server via its PID
+                    # 1. Target the Minecraft Server (Java)
                     if 'java' in name_lower:
                         if cmdline and any('server.jar' in arg.lower() or 'nogui' in arg.lower() for arg in cmdline):
-                            # Adding /f forces the stubborn background Java instance to close instantly
                             subprocess.run(["taskkill", "/pid", str(proc.pid), "/f", "/t"], capture_output=True)
                             terminated_any = True
                             
@@ -147,6 +147,12 @@ def trigger_switch(payload: dict):
                     elif 'playit' in name_lower:
                         subprocess.run(["taskkill", "/pid", str(proc.pid), "/f"], capture_output=True)
                         terminated_any = True
+
+                    # 3. Target the parent command prompt wrapper holding the window open
+                    elif 'cmd' in name_lower:
+                        if cmdline and any('start_server.bat' in arg.lower() for arg in cmdline):
+                            subprocess.run(["taskkill", "/pid", str(proc.pid), "/f"], capture_output=True)
+                            terminated_any = True
                         
                 except (psutil.NoSuchProcess, psutil.AccessDenied):
                     continue

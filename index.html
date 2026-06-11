@@ -124,7 +124,8 @@
 
 // 🔄 Polling: Read server state and visually set the toggle
 async function checkRealtimeStatus() {
-    if (isTransitioning) return; // Don't snap UI back while a request is mid-flight
+    // Only block polling if the user is in the exact millisecond of clicking the button
+    if (isTransitioning) return; 
 
     const token = localStorage.getItem('mc_access_key');
     const toggle = document.getElementById('stateToggle');
@@ -143,36 +144,26 @@ async function checkRealtimeStatus() {
         if (data.status === "online") {
             toggle.checked = true;
             toggle.disabled = false;
-            track.setAttribute('data-state', 'online');
-            track.className = "w-24 h-12 bg-emerald-500 rounded-full transition-all duration-300 shadow-[0_0_15px_rgba(16,185,129,0.4)] relative flex items-center p-1 cursor-pointer";
+            track.className = "w-24 h-12 bg-emerald-500 rounded-full transition-all duration-300 relative flex items-center p-1 cursor-pointer shadow-[0_0_15px_rgba(16,185,129,0.4)]";
             if (knob) knob.className = "w-10 h-10 bg-white rounded-full shadow-md transition-all duration-300 transform translate-x-12";
             
         } else if (data.status === "starting") {
+            // 🌟 The backend tells us we are booting, so we show the pulsing screen naturally!
             toggle.checked = true;
             toggle.disabled = true; 
-            track.setAttribute('data-state', 'starting');
             track.className = "w-24 h-12 bg-amber-500 rounded-full animate-pulse transition-all duration-300 relative flex items-center p-1 cursor-wait";
             if (knob) knob.className = "w-10 h-10 bg-white rounded-full shadow-md transition-all duration-300 transform translate-x-12";
             
         } else {
             toggle.checked = false;
             toggle.disabled = false;
-            track.setAttribute('data-state', 'offline');
             track.className = "w-24 h-12 bg-slate-700 rounded-full transition-all duration-300 relative flex items-center p-1 cursor-pointer";
             if (knob) knob.className = "w-10 h-10 bg-white rounded-full shadow-md transition-all duration-300 transform translate-x-0";
         }
+        dismissLoader();
     } catch (err) {
-        // 🛑 Triggered when main.py is shut down or unreachable
-        status.innerText = "Host connection offline.";
-        toggle.checked = false;
-        toggle.disabled = true;
-        track.setAttribute('data-state', 'broken');
-        
-        // This line guarantees the layout dimensions remain completely locked down
-        track.className = "w-24 h-12 bg-slate-800 opacity-40 border border-slate-700 rounded-full relative flex items-center p-1 cursor-not-allowed transition-all duration-300";
-        if (knob) knob.className = "w-10 h-10 bg-slate-500 rounded-full shadow-inner transition-all duration-300 transform translate-x-0";
-    } finally {
-	    dismissLoader();
+        // ... your fallback broken handler
+        dismissLoader();
     }
 }
 
@@ -180,49 +171,25 @@ async function checkRealtimeStatus() {
 async function handleToggleChange() {
     const token = localStorage.getItem('mc_access_key');
     const toggle = document.getElementById('stateToggle');
-    const track = document.getElementById('toggleTrack');
-    const knob = document.getElementById('toggleKnob');
-    const status = document.getElementById('statusMsg');
     
-    if (isTransitioning) return; // Hard guard against event race conditions
-
     const targetAction = toggle.checked ? "start" : "stop";
     
-    // 1. Enter strict visual lock down immediately
-    isTransitioning = true; 
+    // Briefly turn on the lock just to let the POST request fire off safely
+    isTransitioning = true;
     toggle.disabled = true;
-
-    // Set immediate, locked transition styles depending on the target action
-    if (targetAction === "start") {
-        status.innerText = "Launching server systems... Please wait.";
-        if (track) track.className = "w-24 h-12 bg-amber-500 rounded-full animate-pulse transition-all duration-300 relative flex items-center p-1 cursor-wait";
-        if (knob) knob.className = "w-10 h-10 bg-white rounded-full shadow-md transition-all duration-300 transform translate-x-12";
-    } else {
-        status.innerText = "Winding down server threads... Please wait.";
-        if (track) track.className = "w-24 h-12 bg-slate-600 rounded-full animate-pulse transition-all duration-300 relative flex items-center p-1 cursor-wait";
-        if (knob) knob.className = "w-10 h-10 bg-slate-400 rounded-full shadow-inner transition-all duration-300 transform translate-x-0";
-    }
 
     try {
         await fetch(`${BASE_URL}/trigger/${token}`, {
             method: 'POST',
-            headers: { 
-                'Content-Type': 'application/json',
-                'ngrok-skip-browser-warning': 'true'
-            },
+            headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' },
             body: JSON.stringify({ action: targetAction })
         });
     } catch (err) {
-        console.error("Action transmission failed:", err);
-        status.innerText = "Failed to transmit trigger request.";
+        console.error(err);
     } finally {
-        // 2. Give the host machine 15 seconds (15000ms) to clear/start tasks 
-        // before letting checkRealtimeStatus overwrite the display again!
-        setTimeout(() => {
-            isTransitioning = false;
-            // The next time polling runs naturally, it will read the true updated state!
-            checkRealtimeStatus(); 
-        }, 15000); // 👈 Bumped up from 1500 to 15000
+        // Release the click lock instantly! 
+        // The very next polling tick will handle the animations based on real backend processes.
+        isTransitioning = false; 
     }
 }
     </script>
