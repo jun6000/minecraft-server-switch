@@ -17,18 +17,41 @@ app.add_middleware(
 )
 
 def check_minecraft_process() -> bool:
-    """Scans running system processes for an active Minecraft server instance."""
+    """
+    Scans running system processes. 
+    Returns True ONLY if BOTH the Minecraft server (Java) AND the playit tunnel client are running.
+    """
+    java_running = False
+    playit_running = False
+    
     for proc in psutil.process_iter(['name', 'cmdline']):
         try:
-            # Check if it's a Java process
-            if proc.info['name'] and 'java' in proc.info['name'].lower():
-                cmdline = proc.info['cmdline']
-                # Look for characteristic Minecraft execution flags or jar names
+            name = proc.info['name']
+            cmdline = proc.info['cmdline']
+            
+            if not name:
+                continue
+                
+            name_lower = name.lower()
+            
+            # 1. Check for the Minecraft Server (Java instance with server flags)
+            if 'java' in name_lower:
                 if cmdline and any('server.jar' in arg.lower() or 'nogui' in arg.lower() for arg in cmdline):
-                    return True
+                    java_running = True
+                    
+            # 2. Check for the Playit Tunnel Client
+            # Usually named 'playit.exe' on Windows, or contains 'playit' in the command line
+            elif 'playit' in name_lower:
+                playit_running = True
+                
+            # Quick escape: if we found both, no need to keep searching the process tree
+            if java_running and playit_running:
+                return True
+                
         except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
             continue
-    return False
+            
+    return java_running and playit_running
 
 @app.options("/{path:path}")
 async def preflight_handler():
@@ -84,26 +107,35 @@ def get_status(token: str):
 # The Switch Core: Handles both ON and OFF requests
 @app.post(f"/trigger/{SECRET_SLUG}")
 def trigger_switch(payload: dict):
-    action = payload.get("action") # "start" or "stop"
+    action = payload.get("action")  # "start" or "stop"
     backend_dir = os.path.dirname(os.path.abspath(__file__))
     
-    if action == "start":
-        if get_server_process():
-            return {"status": "info", "message": "Already running."}
+    try:
+        # 🔍 Scan for both Java AND Playit before making decisions
+        is_running = check_minecraft_process()
         
-        script_path = os.path.join(backend_dir, "start_server.bat")
-        subprocess.Popen([script_path], shell=True)
-        return {"message": "Booting engines..."}
-        
-    elif action == "stop":
-        if not get_server_process():
-            return {"status": "info", "message": "Already stopped."}
+        if action == "start":
+            if is_running:
+                # 🛑 Early guardrail exit - completely blocks running start_server.bat
+                return {"status": "info", "message": "Server and tunnel are already running."}
             
-        script_path = os.path.join(backend_dir, "stop_server.bat")
-        subprocess.Popen([script_path], shell=True)
-        return {"message": "Shutting down systems..."}
-        
-    raise HTTPException(status_code=400, detail="Invalid action")
+            script_path = os.path.join(backend_dir, "start_server.bat")
+            subprocess.Popen([script_path], shell=True)
+            return {"status": "starting", "message": "Booting engines..."}
+            
+        elif action == "stop":
+            if not is_running:
+                return {"status": "info", "message": "Systems are already stopped."}
+                
+            script_path = os.path.join(backend_dir, "stop_server.bat")
+            subprocess.Popen([script_path], shell=True)
+            return {"status": "offline", "message": "Shutting down systems..."}
+            
+        raise HTTPException(status_code=400, detail="Invalid action")
+
+    except Exception as e:
+        print(f"Trigger execution error: {e}")
+        return {"status": "error", "message": f"Internal host handler error: {e}"}
 
 if __name__ == "__main__":
     import uvicorn

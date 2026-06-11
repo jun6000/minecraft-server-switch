@@ -8,6 +8,13 @@
 </head>
 <body class="bg-slate-900 text-white flex items-center justify-center min-h-screen">
 
+	<div id="appLoader" class="fixed inset-0 z-50 flex flex-col items-center justify-center bg-slate-950/80 backdrop-blur-md transition-opacity duration-500 ease-in-out">
+	    <div class="flex flex-col items-center gap-4">
+		<div class="w-12 h-12 border-4 border-slate-700 border-t-emerald-500 rounded-full animate-spin"></div>
+		<p class="text-slate-400 text-sm font-medium tracking-wide animate-pulse">Establishing tunnel link...</p>
+	    </div>
+	</div>
+
     <div class="bg-slate-800 p-8 rounded-2xl shadow-2xl border border-slate-700 w-full max-w-md text-center">
         <h1 class="text-2xl font-bold mb-2">Minecraft Host</h1>
         <p class="text-slate-400 text-sm mb-8">Remote Power Management</p>
@@ -44,6 +51,22 @@
         const BASE_URL = "https://nonviviparous-vaughn-unquestioningly.ngrok-free.dev"; 
         let statusInterval = null;
         let isTransitioning = false; 
+	let isFirstLoadComplete = false;
+
+	function dismissLoader() {
+	    if (isFirstLoadComplete) return;
+	    
+	    const loader = document.getElementById('appLoader');
+	    if (loader) {
+		loader.classList.add('opacity-0');
+		loader.classList.add('pointer-events-none');
+		
+		setTimeout(() => {
+		    loader.remove();
+		}, 500);
+	    }
+	    isFirstLoadComplete = true;
+	}
 
         window.onload = function() {
             if (localStorage.getItem('mc_access_key')) {
@@ -148,6 +171,8 @@ async function checkRealtimeStatus() {
         // This line guarantees the layout dimensions remain completely locked down
         track.className = "w-24 h-12 bg-slate-800 opacity-40 border border-slate-700 rounded-full relative flex items-center p-1 cursor-not-allowed transition-all duration-300";
         if (knob) knob.className = "w-10 h-10 bg-slate-500 rounded-full shadow-inner transition-all duration-300 transform translate-x-0";
+    } finally {
+	    dismissLoader();
     }
 }
 
