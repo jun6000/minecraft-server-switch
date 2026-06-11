@@ -113,7 +113,7 @@ def trigger_switch(payload: dict):
     
     try:
         # 🔍 Scan for both Java AND Playit before making decisions
-        is_running = check_minecraft_process()
+        is_running = check_minecraft_status()
         
         if action == "start":
             if is_running:
