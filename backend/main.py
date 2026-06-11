@@ -16,6 +16,20 @@ app.add_middleware(
     expose_headers=["*"],
 )
 
+def check_minecraft_process() -> bool:
+    """Scans running system processes for an active Minecraft server instance."""
+    for proc in psutil.process_iter(['name', 'cmdline']):
+        try:
+            # Check if it's a Java process
+            if proc.info['name'] and 'java' in proc.info['name'].lower():
+                cmdline = proc.info['cmdline']
+                # Look for characteristic Minecraft execution flags or jar names
+                if cmdline and any('server.jar' in arg.lower() or 'nogui' in arg.lower() for arg in cmdline):
+                    return True
+        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+            continue
+    return False
+
 @app.options("/{path:path}")
 async def preflight_handler():
     return {"message": "ok"}
@@ -55,7 +69,7 @@ def get_status(token: str):
         
     try:
         # Your original code that checks if the server is running...
-        # e.g., is_running = check_minecraft_process()
+        is_running = check_minecraft_process()
         
         if is_running:
             return {"status": "online", "message": "Server is actively running."}
