@@ -24,11 +24,14 @@
             
             <label class="inline-flex items-center cursor-pointer relative">
                 <input type="checkbox" id="stateToggle" onchange="handleToggleChange()" class="sr-only peer">
-                <div id="toggleTrack" class="w-24 h-12 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[4px] after:left-[4px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-10 after:w-11 after:transition-all peer-checked:bg-slate-600 transition-colors">
-<div id="toggleKnob" class="w-10 h-10 bg-white rounded-full shadow-md transition-all duration-300 transform translate-x-0"></div>
+<div id="toggleTrack" 
+     data-state="syncing"
+     class="w-24 h-12 bg-slate-800 border border-slate-700 rounded-full relative flex items-center p-1 cursor-wait transition-all duration-300">
     
-    <input type="checkbox" id="stateToggle" class="hidden">
-		</div>
+    <div id="toggleKnob" class="w-10 h-10 bg-slate-600 rounded-full shadow-md transition-all duration-300 transform translate-x-0"></div>
+    
+    <input type="checkbox" id="stateToggle" class="hidden" disabled>
+</div>
             </label>
 
             <div id="statusMsg" class="text-sm font-medium text-slate-500 italic">Syncing with host...</div>
@@ -103,16 +106,13 @@ async function checkRealtimeStatus() {
     const token = localStorage.getItem('mc_access_key');
     const toggle = document.getElementById('stateToggle');
     const track = document.getElementById('toggleTrack');
-    const knob = document.getElementById('toggleKnob'); // 👈 Grab the inner ball element
+    const knob = document.getElementById('toggleKnob');
     const status = document.getElementById('statusMsg');
 
     try {
-        // Add the options object containing our custom skip header to this GET request
         const response = await fetch(`${BASE_URL}/status/${token}`, {
             method: 'GET',
-            headers: {
-                'ngrok-skip-browser-warning': 'true'
-            }
+            headers: { 'ngrok-skip-browser-warning': 'true' }
         });
         const data = await response.json();
         status.innerText = data.message;
@@ -120,34 +120,34 @@ async function checkRealtimeStatus() {
         if (data.status === "online") {
             toggle.checked = true;
             toggle.disabled = false;
-            // Green track + slide knob to the right side (translate-x-12)
+            track.setAttribute('data-state', 'online');
             track.className = "w-24 h-12 bg-emerald-500 rounded-full transition-all duration-300 shadow-[0_0_15px_rgba(16,185,129,0.4)] relative flex items-center p-1 cursor-pointer";
             if (knob) knob.className = "w-10 h-10 bg-white rounded-full shadow-md transition-all duration-300 transform translate-x-12";
             
         } else if (data.status === "starting") {
             toggle.checked = true;
             toggle.disabled = true; 
-            // Amber pulsing track + slide knob to the right
-            track.className = "w-24 h-12 bg-amber-500 rounded-full animate-pulse transition-all duration-300 relative flex items-center p-1 cursor-pointer";
+            track.setAttribute('data-state', 'starting');
+            track.className = "w-24 h-12 bg-amber-500 rounded-full animate-pulse transition-all duration-300 relative flex items-center p-1 cursor-wait";
             if (knob) knob.className = "w-10 h-10 bg-white rounded-full shadow-md transition-all duration-300 transform translate-x-12";
             
         } else {
-            // Offline (But host backend script is alive)
             toggle.checked = false;
             toggle.disabled = false;
-            // Dark gray track + slide knob back to the left side (translate-x-0)
+            track.setAttribute('data-state', 'offline');
             track.className = "w-24 h-12 bg-slate-700 rounded-full transition-all duration-300 relative flex items-center p-1 cursor-pointer";
             if (knob) knob.className = "w-10 h-10 bg-white rounded-full shadow-md transition-all duration-300 transform translate-x-0";
         }
     } catch (err) {
-        // 🛑 Connection broken (Python API is shut down)
+        // 🛑 Triggered when main.py is shut down or unreachable
         status.innerText = "Host connection offline.";
         toggle.checked = false;
-        toggle.disabled = true; // 👈 Disable the underlying switch interaction
+        toggle.disabled = true;
+        track.setAttribute('data-state', 'broken');
         
-        // Grayed out, muted visual state so it looks broken/unclickable instead of red/off
-        track.className = "w-24 h-12 bg-slate-800 rounded-full opacity-40 relative flex items-center p-1 cursor-not-allowed";
-        if (knob) knob.className = "w-10 h-10 bg-slate-400 rounded-full shadow-inner transition-all duration-300 transform translate-x-0";
+        // This line guarantees the layout dimensions remain completely locked down
+        track.className = "w-24 h-12 bg-slate-800 opacity-40 border border-slate-700 rounded-full relative flex items-center p-1 cursor-not-allowed transition-all duration-300";
+        if (knob) knob.className = "w-10 h-10 bg-slate-500 rounded-full shadow-inner transition-all duration-300 transform translate-x-0";
     }
 }
 
