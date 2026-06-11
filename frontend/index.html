@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Server Controller</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-900 text-white flex items-center justify-center min-h-screen">
+
+    <div class="bg-slate-800 p-8 rounded-2xl shadow-2xl border border-slate-700 w-full max-w-md text-center">
+        <h1 class="text-2xl font-bold mb-2">Minecraft Host</h1>
+        <p class="text-slate-400 text-sm mb-8">Remote Power Management</p>
+
+        <div id="loginView" class="hidden space-y-4">
+            <input type="password" id="keyInput" placeholder="Access Key" 
+                class="w-full px-4 py-2 bg-slate-900 border border-slate-700 rounded-lg text-center focus:outline-none focus:border-emerald-500">
+            <button onclick="saveKey()" id="authBtn" class="w-full bg-emerald-600 font-medium py-2 rounded-lg">
+                Authorize Session
+            </button>
+        </div>
+
+        <div id="controlView" class="hidden flex flex-col items-center justify-center space-y-6">
+            
+            <label class="inline-flex items-center cursor-pointer relative">
+                <input type="checkbox" id="stateToggle" onchange="handleToggleChange()" class="sr-only peer">
+                <div id="toggleTrack" class="w-24 h-12 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[4px] after:left-[4px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-10 after:w-11 after:transition-all peer-checked:bg-slate-600 transition-colors"></div>
+            </label>
+
+            <div id="statusMsg" class="text-sm font-medium text-slate-500 italic">Syncing with host...</div>
+            
+            <button onclick="clearSession()" class="text-xs text-slate-500 underline">Clear Saved Key</button>
+        </div>
+    </div>
+
+    <script>
+        const BASE_URL = "https://your-custom-name.ngrok-free.app"; 
+        let statusInterval = null;
+        let isTransitioning = false; 
+
+        window.onload = function() {
+            if (localStorage.getItem('mc_access_key')) {
+                showControlView();
+                startPolling();
+            } else {
+                showLoginView();
+            }
+        };
+
+        function showLoginView() {
+            document.getElementById('loginView').classList.remove('hidden');
+            document.getElementById('controlView').classList.add('hidden');
+            if(statusInterval) clearInterval(statusInterval);
+        }
+
+        function showControlView() {
+            document.getElementById('controlView').classList.remove('hidden');
+            document.getElementById('loginView').classList.add('hidden');
+        }
+
+        function startPolling() {
+            checkRealtimeStatus();
+            statusInterval = setInterval(checkRealtimeStatus, 4000);
+        }
+
+        async function saveKey() {
+            const key = document.getElementById('keyInput').value.trim();
+            if (!key) return;
+            try {
+                const response = await fetch(`${BASE_URL}/validate-key`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ key: key })
+                });
+                if (response.ok) {
+                    localStorage.setItem('mc_access_key', key);
+                    showControlView();
+                    startPolling();
+                } else {
+                    alert("Invalid Key!");
+                }
+            } catch (err) {
+                alert("Cannot connect to backend.");
+            }
+        }
+
+        function clearSession() {
+            localStorage.removeItem('mc_access_key');
+            showLoginView();
+        }
+
+        // 🔄 Polling: Read server state and visually set the toggle
+        async function checkRealtimeStatus() {
+            if (isTransitioning) return; // Don't snap UI back while a request is mid-flight
+
+            const token = localStorage.getItem('mc_access_key');
+            const toggle = document.getElementById('stateToggle');
+            const track = document.getElementById('toggleTrack');
+            const status = document.getElementById('statusMsg');
+
+            try {
+                const response = await fetch(`${BASE_URL}/status/${token}`);
+                const data = await response.json();
+                status.innerText = data.message;
+
+                if (data.status === "online") {
+                    toggle.checked = true;
+                    toggle.disabled = false;
+                    track.className = "w-24 h-12 bg-emerald-500 rounded-full transition-all duration-300 shadow-[0_0_15px_rgba(16,185,129,0.4)]";
+                } else if (data.status === "starting") {
+                    toggle.checked = true;
+                    toggle.disabled = true; // Lock interactions while initializing
+                    track.className = "w-24 h-12 bg-amber-500 rounded-full animate-pulse transition-all duration-300";
+                } else {
+                    // Offline
+                    toggle.checked = false;
+                    toggle.disabled = false;
+                    track.className = "w-24 h-12 bg-slate-700 rounded-full transition-all duration-300";
+                }
+            } catch (err) {
+                status.innerText = "Host connection offline.";
+                track.className = "w-24 h-12 bg-red-900 rounded-full opacity-50";
+            }
+        }
+
+        // ⚡ Execution: Fired when a user physically flips the switch
+        async function handleToggleChange() {
+            const token = localStorage.getItem('mc_access_key');
+            const toggle = document.getElementById('stateToggle');
+            const status = document.getElementById('statusMsg');
+            
+            const targetAction = toggle.checked ? "start" : "stop";
+            
+            isTransitioning = true; 
+            toggle.disabled = true;
+            status.innerText = targetAction === "start" ? "Sending start signal..." : "Sending stop signal...";
+
+            try {
+                await fetch(`${BASE_URL}/trigger/${token}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: targetAction })
+                });
+            } catch (err) {
+                console.error("Action transmission failed.");
+            } finally {
+                // Release UI control lock back to the status polling thread
+                setTimeout(() => {
+                    isTransitioning = false;
+                    checkRealtimeStatus();
+                }, 1500);
+            }
+        }
+    </script>
+</body>
+</html>
